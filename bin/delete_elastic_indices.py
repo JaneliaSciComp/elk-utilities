@@ -21,9 +21,8 @@ def call_responder(server, endpoint):
         sys.exit(-1)
     if req.status_code == 200:
         return req.json()
-    else:
-        logger.error('Status: %s', str(req.status_code))
-        sys.exit(-1)
+    logger.error('Status: %s', str(req.status_code))
+    sys.exit(-1)
 
 
 def initialize_program():
