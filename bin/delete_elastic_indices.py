@@ -88,7 +88,7 @@ def process_indices():
             counter['deleted'] += 1
             counter['ddeleted'] += docs
             if ARG.DELETE:
-                esearch.indices.delete(index=index, ignore=[400, 404])
+                esearch.indices.delete(index=index, ignore=[400, 404]) #pylint: disable=unexpected-keyword-arg
                 logger.error("Deleted %s (%s docs)", index, "{:,}".format(docs))
             else:
                 logger.warning("Would have deleted %s (%s docs)", index, "{:,}".format(docs))
