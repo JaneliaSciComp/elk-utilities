@@ -43,8 +43,7 @@ def last_day_of_month(indate):
 
 
 def process_indices():
-    found = dfound = 0
-    deleted = ddeleted = 0
+    counter = {'found': 0, 'dfound': 0, 'deleted': 0, 'ddeleted': 0}
     today = date.today()
     try:
         esearch = Elasticsearch(SERVER['elk-elastic']['address'])
@@ -68,8 +67,8 @@ def process_indices():
             continue
         stats = esearch.indices.stats(index)
         docs = stats['indices'][index]['primaries']['docs']['count']
-        found += 1
-        dfound += docs
+        counter['found'] += 1
+        counter['dfound'] += docs
         # index is expected to end with YYYY.MM.DD or YYYY.MM
         field = index.split('-')
         indexdate = field[-1]
@@ -82,16 +81,16 @@ def process_indices():
         delta = (today - idateobj).days
         logger.info("%s (%s docs): %d day(s)", index, "{:,}".format(docs), delta)
         if delta > maxdays:
-            deleted += 1
-            ddeleted += docs
+            counter['deleted'] += 1
+            counter['ddeleted'] += docs
             if ARG.DELETE:
                 esearch.indices.delete(index=index, ignore=[400, 404])
                 logger.error("Deleted %s (%s docs)", index, "{:,}".format(docs))
             else:
                 logger.warning("Would have deleted %s (%s docs)", index, "{:,}".format(docs))
-    print("Indices found: %d (%s docs)" % (found, "{:,}".format(dfound)))
+    print("Indices found: %d (%s docs)" % (counter['found'], "{:,}".format(counter['dfound'])))
     print("Indices %sdeleted: %d (%s docs)" % ('' if (ARG.DELETE) else \
-        'that would have been ', deleted, "{:,}".format(ddeleted)))
+        'that would have been ', counter['deleted'], "{:,}".format(counter['ddeleted'])))
 
 
 # -----------------------------------------------------------------------------
