@@ -36,6 +36,18 @@ def initialize_program():
     POLICY = data['config']
 
 
+def get_index_date(index):
+    # index is expected to end with YYYY.MM.DD or YYYY.MM
+    field = index.split('-')
+    indexdate = field[-1]
+    if len(indexdate) == 7:
+        # YY-MM : add the last day of that month
+        yrmo = indexdate.split('.')
+        ldom = last_day_of_month(date(int(yrmo[0]), int(yrmo[1]), 1))
+        indexdate += '.' + str(ldom.day)
+    return datetime.strptime(indexdate, "%Y.%m.%d").date()
+
+
 def last_day_of_month(indate):
     if indate.month == 12:
         return indate.replace(day=31)
@@ -69,15 +81,7 @@ def process_indices():
         docs = stats['indices'][index]['primaries']['docs']['count']
         counter['found'] += 1
         counter['dfound'] += docs
-        # index is expected to end with YYYY.MM.DD or YYYY.MM
-        field = index.split('-')
-        indexdate = field[-1]
-        if len(indexdate) == 7:
-            # YY-MM : add the last day of that month
-            yrmo = indexdate.split('.')
-            ldom = last_day_of_month(date(int(yrmo[0]), int(yrmo[1]), 1))
-            indexdate += '.' + str(ldom.day)
-        idateobj = datetime.strptime(indexdate, "%Y.%m.%d").date()
+        idateobj = get_index_date(index)
         delta = (today - idateobj).days
         logger.info("%s (%s docs): %d day(s)", index, "{:,}".format(docs), delta)
         if delta > maxdays:
