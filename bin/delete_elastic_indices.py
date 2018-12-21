@@ -71,6 +71,7 @@ def process_indices():
         docs = stats['indices'][index]['primaries']['docs']['count']
         found += 1
         dfound += docs
+        # index is expected to end with YYYY.MM.DD or YYYY.MM
         field = index.split('-')
         indexdate = field[-1]
         if len(indexdate) == 7:
