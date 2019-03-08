@@ -9,3 +9,4 @@ install:
 script: 
   - pylint --disable=C,W count_elastic_docs.py
   - pylint --disable=C,W delete_elastic_indices.py
+  - pylint --disable=C,W get_latest_record.py
