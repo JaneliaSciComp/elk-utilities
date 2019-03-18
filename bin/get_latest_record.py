@@ -40,10 +40,15 @@ def process_index(index):
         message = template.format(type(ex).__name__, ex.args)
         print(message)
         sys.exit(-1)
+    # Show health
     health = esearch.cluster.health()
     print("Cluster status:", health['status'])
     if index not in esearch.indices.get('*'):
         index += '*'
+    # Show transactions in last minute
+    result = esearch.search(index=index, body={"query": {"range": {"@timestamp": {"gte": "now-1m"}}}})
+    print("Transactions in the last minute: %d"  % (result['hits']['total']))
+    # Show last record in index
     result = esearch.search(index=index, body={"size": 1, "sort": {"@timestamp": "desc"}})
     print("Index: " + result['hits']['hits'][0]['_index'])
     pp = pprint.PrettyPrinter(indent=4)
@@ -56,7 +61,7 @@ if __name__ == '__main__':
     PARSER = argparse.ArgumentParser(
         description='Count documents in Elastic indices')
     PARSER.add_argument('--index', dest='INDEX', action='store',
-                        default='nptest', help='Index to fetch latest record from')
+                        default='emdata*_dvid_activity-*', help='Index to fetch latest record from')
     PARSER.add_argument('--verbose', action='store_true',
                         dest='VERBOSE', default=False,
                         help='Turn on verbose output')
