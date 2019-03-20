@@ -62,8 +62,8 @@ def process_index(index):
         for app in user['3']['buckets']:
             for method in app['4']['buckets']:
                 for server in method['5']['buckets']:
-                    count = server['6']['doc_count']
                     for port in server['6']['buckets']:
+                        count = port['doc_count']
                         duration_99 = port['12']['values'][0]['value']
                         payload = {'time': epoch_seconds,
                                    'user': user['key'], 'app': app['key'],
