@@ -10,6 +10,7 @@ from kafka.errors import KafkaError
 
 # Configuration
 CONFIG = {'config': {'url': 'http://config.int.janelia.org/'}}
+QUERIES = {}
 SERVER = {}
 WRITE_TOPIC = 'dvid_activity_minute_metrics'
 
@@ -30,11 +31,13 @@ def call_responder(server, endpoint):
 
 def initialize_program():
     """ Initialize database """
-    global CONFIG, SERVER
+    global CONFIG, SERVER, QUERIES
     data = call_responder('config', 'config/rest_services')
     CONFIG = data['config']
     data = call_responder('config', 'config/servers')
     SERVER = data['config']
+    data = call_responder('config', 'config/elasticsearch_queries')
+    QUERIES = data['config']
 
 
 def process_index(index):
@@ -51,120 +54,7 @@ def process_index(index):
     if index not in esearch.indices.get('*'):
         index += '*'
     # Get last minute metrics
-    payload = {
-  "aggs": {
-    "2": {
-      "terms": {
-        "field": "user.keyword",
-        "size": 100,
-        "order": {
-          "_count": "desc"
-        }
-      },
-      "aggs": {
-        "3": {
-          "significant_terms": {
-            "field": "client.keyword",
-            "size": 100
-          },
-          "aggs": {
-            "4": {
-              "significant_terms": {
-                "field": "method.keyword",
-                "size": 5
-              },
-              "aggs": {
-                "5": {
-                  "significant_terms": {
-                    "field": "server.keyword",
-                    "size": 10
-                  },
-                  "aggs": {
-                    "6": {
-                      "significant_terms": {
-                        "field": "port.keyword",
-                        "size": 100
-                      },
-                      "aggs": {
-                        "7": {
-                          "max": {
-                            "field": "duration"
-                          }
-                        },
-                        "8": {
-                          "min": {
-                            "field": "duration"
-                          }
-                        },
-                        "9": {
-                          "avg": {
-                            "field": "duration"
-                          }
-                        },
-                        "10": {
-                          "sum": {
-                            "field": "bytes_in"
-                          }
-                        },
-                        "11": {
-                          "sum": {
-                            "field": "bytes_out"
-                          }
-                        },
-                        "12": {
-                          "percentiles": {
-                            "field": "duration",
-                            "percents": [
-                              99
-                            ],
-                            "keyed": False
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  },
-  "size": 0,
-  "_source": {
-    "excludes": []
-  },
-  "stored_fields": [
-    "*"
-  ],
-  "script_fields": {},
-  "docvalue_fields": [
-    {
-      "field": "@timestamp",
-      "format": "date_time"
-    }
-  ],
-  "query": {
-    "bool": {
-      "must": [
-        {
-          "match_all": {}
-        },
-        {
-          "range": {
-            "@timestamp": {
-              "gte": "now-1m",
-            }
-          }
-        }
-      ],
-      "filter": [],
-      "should": [],
-      "must_not": []
-    }
-  }
-}
+    payload = QUERIES['dvid_combined_minute_summary']
     epoch_seconds = time.time()
     producer = KafkaProducer(bootstrap_servers=SERVER['Kafka']['broker_list'])
     result = esearch.search(index=index, body=payload)
@@ -187,14 +77,15 @@ def process_index(index):
                                    'percentile_99_duration': '%.2f' % duration_99,
                                    'bytes_in': '%d' % port['10']['value'],
                                    'bytes_out': '%d' % port['11']['value']}
-                        logger.info(payload)
-                        future = producer.send(WRITE_TOPIC,
-                                               json.dumps(payload))
-                        try:
-                            record_metadata = future.get(timeout=10)
-                        except KafkaError:
-                            print("Failed writing to " + WRITE_TOPIC)
-                            sys.exit(-1)
+                        LOGGER.info(payload)
+                        if (ARG.WRITE):
+                            future = producer.send(WRITE_TOPIC,
+                                                   json.dumps(payload))
+                            try:
+                                record_metadata = future.get(timeout=10)
+                            except KafkaError:
+                                print("Failed writing to " + WRITE_TOPIC)
+                                sys.exit(-1)
 
 
 # -----------------------------------------------------------------------------
@@ -211,6 +102,9 @@ if __name__ == '__main__':
     PARSER.add_argument('--debug', action='store_true',
                         dest='DEBUG', default=False,
                         help='Turn on debug output')
+    PARSER.add_argument('--write', action='store_true',
+                        dest='WRITE', default=False,
+                        help='Publish to Kafka topic')
     ARG = PARSER.parse_args()
 
     LOGGER = colorlog.getLogger()
