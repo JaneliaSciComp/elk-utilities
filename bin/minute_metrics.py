@@ -54,7 +54,7 @@ def process_index(index):
     if index not in esearch.indices.get('*'):
         index += '*'
     # Get last minute metrics
-    payload = QUERIES['dvid_combined_minute_summary']
+    payload = QUERIES['dvid_combined_minute_summary']['query']
     epoch_seconds = time.time()
     producer = KafkaProducer(bootstrap_servers=SERVER['Kafka']['broker_list'])
     result = esearch.search(index=index, body=payload)
