@@ -66,7 +66,8 @@ def process_indices():
         sys.exit(-1)
     health = esearch.cluster.health()
     print("Cluster status:", health['status'])
-    for index in esearch.indices.get('*'):
+    for index in esearch.indices.get(ARG.INDEX):
+        use_policy = ''
         if index[0] == '.':
             continue
         maxdays = 0
@@ -74,6 +75,7 @@ def process_indices():
             if re.search(POLICY[policy]['term'], index):
                 maxdays = POLICY[policy]['days']
                 logger.debug("%s met %s policy (%d days)" % (index, policy, maxdays))
+                use_policy = policy
                 break
         if not maxdays:
             continue
@@ -89,9 +91,9 @@ def process_indices():
             counter['ddeleted'] += docs
             if ARG.DELETE:
                 esearch.indices.delete(index=index, ignore=[400, 404]) #pylint: disable=unexpected-keyword-arg
-                logger.error("Deleted %s (%s docs)", index, "{:,}".format(docs))
+                logger.error("Deleted %s (%s docs) [%s]", index, "{:,}".format(docs), use_policy)
             else:
-                logger.warning("Would have deleted %s (%s docs)", index, "{:,}".format(docs))
+                logger.warning("Would have deleted %s (%s docs) [%s]", index, "{:,}".format(docs), use_policy)
     print("Indices found: %d (%s docs)" % (counter['found'], "{:,}".format(counter['dfound'])))
     print("Indices %sdeleted: %d (%s docs)" % ('' if (ARG.DELETE) else \
         'that would have been ', counter['deleted'], "{:,}".format(counter['ddeleted'])))
@@ -108,6 +110,9 @@ if __name__ == '__main__':
     PARSER.add_argument('--debug', action='store_true',
                         dest='DEBUG', default=False,
                         help='Turn on debug output')
+    PARSER.add_argument('--index', dest='INDEX', action='store',
+                        default='*',
+                        help='Index to check [*]')
     PARSER.add_argument('--delete', action='store_true',
                         dest='DELETE', default=False,
                         help='Actually delete indices')
