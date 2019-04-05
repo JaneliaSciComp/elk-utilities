@@ -1,12 +1,12 @@
 import argparse
 import sys
-import colorlog
 import json
-import requests
 import time
+import colorlog
 from elasticsearch import Elasticsearch
 from kafka import KafkaProducer
 from kafka.errors import KafkaError
+import requests
 
 # Configuration
 CONFIG = {'config': {'url': 'http://config.int.janelia.org/'}}
@@ -78,11 +78,11 @@ def process_index(index):
                                    'bytes_in': '%d' % port['10']['value'],
                                    'bytes_out': '%d' % port['11']['value']}
                         LOGGER.info(payload)
-                        if (ARG.WRITE):
+                        if ARG.WRITE:
                             future = producer.send(WRITE_TOPIC,
                                                    json.dumps(payload))
                             try:
-                                record_metadata = future.get(timeout=10)
+                                future.get(timeout=10)
                             except KafkaError:
                                 print("Failed writing to " + WRITE_TOPIC)
                                 sys.exit(-1)

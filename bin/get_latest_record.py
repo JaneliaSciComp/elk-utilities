@@ -1,7 +1,7 @@
 import argparse
 import sys
-import colorlog
 import pprint
+import colorlog
 import requests
 from elasticsearch import Elasticsearch
 
@@ -46,13 +46,14 @@ def process_index(index):
     if index not in esearch.indices.get('*'):
         index += '*'
     # Show transactions in last minute
-    result = esearch.search(index=index, body={"query": {"range": {"@timestamp": {"gte": "now-1m"}}}})
+    result = esearch.search(index=index, body={"query": {"range": \
+        {"@timestamp": {"gte": "now-1m"}}}})
     print("Transactions in the last minute: %d"  % (result['hits']['total']))
     # Show last record in index
     result = esearch.search(index=index, body={"size": 1, "sort": {"@timestamp": "desc"}})
     print("Index: " + result['hits']['hits'][0]['_index'])
-    pp = pprint.PrettyPrinter(indent=4)
-    pp.pprint(result['hits']['hits'][0]['_source'])
+    ppp = pprint.PrettyPrinter(indent=4)
+    ppp.pprint(result['hits']['hits'][0]['_source'])
 
 
 # -----------------------------------------------------------------------------
@@ -62,6 +63,9 @@ if __name__ == '__main__':
         description='Count documents in Elastic indices')
     PARSER.add_argument('--index', dest='INDEX', action='store',
                         default='emdata*_dvid_activity-*', help='Index to fetch latest record from')
+    PARSER.add_argument('--server', dest='SERVER', action='store',
+                        default='',
+                        help='ES erver to query [flyem-elk.int.janelia.org:9200]')
     PARSER.add_argument('--verbose', action='store_true',
                         dest='VERBOSE', default=False,
                         help='Turn on verbose output')
@@ -81,6 +85,10 @@ if __name__ == '__main__':
     HANDLER.setFormatter(colorlog.ColoredFormatter())
     LOGGER.addHandler(HANDLER)
 
-    initialize_program()
+    if ARG.SERVER:
+        SERVER['elk-elastic'] = {'address': 'http://' + ARG.SERVER + ':9200'}
+        CONFIG['elk-elastic'] = {'url': SERVER['elk-elastic']['address'] + '/'}
+    else:
+        initialize_program()
     process_index(ARG.INDEX)
     sys.exit(0)

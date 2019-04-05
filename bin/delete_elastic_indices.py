@@ -17,11 +17,11 @@ def call_responder(server, endpoint):
     try:
         req = requests.get(url)
     except requests.exceptions.RequestException as err:
-        logger.critical(err)
+        LOGGER.critical(err)
         sys.exit(-1)
     if req.status_code == 200:
         return req.json()
-    logger.error('Status: %s', str(req.status_code))
+    LOGGER.error('Status: %s', str(req.status_code))
     sys.exit(-1)
 
 
@@ -74,7 +74,7 @@ def process_indices():
         for policy in POLICY:
             if re.search(POLICY[policy]['term'], index):
                 maxdays = POLICY[policy]['days']
-                logger.debug("%s met %s policy (%d days)" % (index, policy, maxdays))
+                LOGGER.debug("%s met %s policy (%d days)", index, policy, maxdays)
                 use_policy = policy
                 break
         if not maxdays:
@@ -85,15 +85,16 @@ def process_indices():
         counter['dfound'] += docs
         idateobj = get_index_date(index)
         delta = (today - idateobj).days
-        logger.info("%s (%s docs): %d day(s)", index, "{:,}".format(docs), delta)
+        LOGGER.info("%s (%s docs): %d day(s)", index, "{:,}".format(docs), delta)
         if delta > maxdays:
             counter['deleted'] += 1
             counter['ddeleted'] += docs
             if ARG.DELETE:
                 esearch.indices.delete(index=index, ignore=[400, 404]) #pylint: disable=unexpected-keyword-arg
-                logger.error("Deleted %s (%s docs) [%s]", index, "{:,}".format(docs), use_policy)
+                LOGGER.error("Deleted %s (%s docs) [%s]", index, "{:,}".format(docs), use_policy)
             else:
-                logger.warning("Would have deleted %s (%s docs) [%s]", index, "{:,}".format(docs), use_policy)
+                LOGGER.warning("Would have deleted %s (%s docs) [%s]", index, \
+                    "{:,}".format(docs), use_policy)
     print("Indices found: %d (%s docs)" % (counter['found'], "{:,}".format(counter['dfound'])))
     print("Indices %sdeleted: %d (%s docs)" % ('' if (ARG.DELETE) else \
         'that would have been ', counter['deleted'], "{:,}".format(counter['ddeleted'])))
@@ -118,16 +119,16 @@ if __name__ == '__main__':
                         help='Actually delete indices')
     ARG = PARSER.parse_args()
 
-    logger = colorlog.getLogger()
+    LOGGER = colorlog.getLogger()
     if ARG.DEBUG:
-        logger.setLevel(colorlog.colorlog.logging.DEBUG)
+        LOGGER.setLevel(colorlog.colorlog.logging.DEBUG)
     elif ARG.VERBOSE:
-        logger.setLevel(colorlog.colorlog.logging.INFO)
+        LOGGER.setLevel(colorlog.colorlog.logging.INFO)
     else:
-        logger.setLevel(colorlog.colorlog.logging.WARNING)
+        LOGGER.setLevel(colorlog.colorlog.logging.WARNING)
     HANDLER = colorlog.StreamHandler()
     HANDLER.setFormatter(colorlog.ColoredFormatter())
-    logger.addHandler(HANDLER)
+    LOGGER.addHandler(HANDLER)
 
     initialize_program()
     process_indices()

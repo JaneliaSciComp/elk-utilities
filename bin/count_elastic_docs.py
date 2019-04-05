@@ -30,6 +30,7 @@ def initialize_program():
     data = call_responder('config', 'config/servers')
     SERVER = data['config']
 
+
 def process_indices():
     counter = {'found': 0, 'dfound': 0}
     try:
@@ -61,6 +62,9 @@ if __name__ == '__main__':
     PARSER.add_argument('--debug', action='store_true',
                         dest='DEBUG', default=False,
                         help='Turn on debug output')
+    PARSER.add_argument('--server', dest='SERVER', action='store',
+                        default='',
+                        help='ES erver to query [flyem-elk.int.janelia.org:9200]')
     ARG = PARSER.parse_args()
 
     LOGGER = colorlog.getLogger()
@@ -74,6 +78,10 @@ if __name__ == '__main__':
     HANDLER.setFormatter(colorlog.ColoredFormatter())
     LOGGER.addHandler(HANDLER)
 
-    initialize_program()
+    if ARG.SERVER:
+        SERVER['elk-elastic'] = {'address': 'http://' + ARG.SERVER + ':9200'}
+        CONFIG['elk-elastic'] = {'url': SERVER['elk-elastic']['address'] + '/'}
+    else:
+        initialize_program()
     process_indices()
     sys.exit(0)
