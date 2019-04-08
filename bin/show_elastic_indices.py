@@ -1,6 +1,7 @@
 import argparse
 from datetime import datetime
 import sys
+from colorama import init, Fore, Back, Style
 import colorlog
 import requests
 from elasticsearch import Elasticsearch
@@ -24,6 +25,7 @@ def call_responder(server, endpoint):
 
 
 def initialize_program():
+    init(autoreset=True)
     """ Initialize database """
     global CONFIG, SERVER
     data = call_responder('config', 'config/rest_services')
@@ -47,7 +49,10 @@ def process_indices():
     for idx in sorted(response):
         counter['found'] += 1
         if 'aliases' in response[idx] and response[idx]['aliases']:
-            print('%s (alises: %s)' % (idx, ", ".join(list(response[idx]['aliases'].keys()))))
+            aliases = Fore.WHITE + Style.BRIGHT + Back.RED \
+                      + ", ".join(list(response[idx]['aliases'].keys())) \
+                      + Style.RESET_ALL
+            print('%s (alises: %s)' % (idx, aliases))
         else:
             print(idx)
         if ARG.FULL:
