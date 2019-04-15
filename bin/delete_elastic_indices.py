@@ -65,8 +65,7 @@ def process_indices():
         message = template.format(type(ex).__name__, ex.args)
         print(message)
         sys.exit(-1)
-    health = esearch.cluster.health()
-    print("Cluster status:", health['status'])
+    print("Cluster status:", esearch.cluster.health()['status'])
     for index in esearch.indices.get(ARG.INDEX):
         use_policy = ''
         if index[0] == '.':
