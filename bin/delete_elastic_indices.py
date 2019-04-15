@@ -56,6 +56,7 @@ def last_day_of_month(indate):
 
 def process_indices():
     counter = {'found': 0, 'dfound': 0, 'deleted': 0, 'ddeleted': 0}
+    policies = dict()
     today = date.today()
     try:
         esearch = Elasticsearch(SERVER['elk-elastic']['address'])
@@ -89,6 +90,9 @@ def process_indices():
         if delta > maxdays:
             counter['deleted'] += 1
             counter['ddeleted'] += docs
+            if use_policy not in policies:
+                policies[use_policy] = 0
+            policies[use_policy] += 1
             if ARG.DELETE:
                 esearch.indices.delete(index=index, ignore=[400, 404]) #pylint: disable=unexpected-keyword-arg
                 LOGGER.error("Deleted %s (%s docs) [%s]", index, "{:,}".format(docs), use_policy)
@@ -98,6 +102,10 @@ def process_indices():
     print("Indices found: %d (%s docs)" % (counter['found'], "{:,}".format(counter['dfound'])))
     print("Indices %sdeleted: %d (%s docs)" % ('' if (ARG.DELETE) else \
         'that would have been ', counter['deleted'], "{:,}".format(counter['ddeleted'])))
+    if len(policies):
+        print("Policies in use:")
+        for policy in sorted(policies):
+            print("  %s: %d" % (policy, policies[policy]))
 
 
 # -----------------------------------------------------------------------------
