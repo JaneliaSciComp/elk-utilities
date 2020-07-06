@@ -59,13 +59,13 @@ def process_indices():
     policies = dict()
     today = date.today()
     try:
-        esearch = Elasticsearch(SERVER['elk-elastic']['address'])
+        esearch = Elasticsearch(SERVER[ARG.SERVER]['address'])
     except Exception as ex:
         template = "An exception of type {0} occurred. Arguments:\n{1!r}"
         message = template.format(type(ex).__name__, ex.args)
         print(message)
         sys.exit(-1)
-    print("Cluster status:", esearch.cluster.health()['status'])
+    #print("Cluster status:", esearch.cluster.health()['status'])
     for index in esearch.indices.get(ARG.INDEX):
         use_policy = ''
         if index[0] == '.':
@@ -80,6 +80,8 @@ def process_indices():
         if not maxdays:
             continue
         stats = esearch.indices.stats(index)
+        if index not in stats['indices'] or 'docs' not in stats['indices'][index]['primaries']:
+            continue
         docs = stats['indices'][index]['primaries']['docs']['count']
         counter['found'] += 1
         counter['dfound'] += docs
@@ -112,15 +114,18 @@ def process_indices():
 if __name__ == '__main__':
     PARSER = argparse.ArgumentParser(
         description='Delete aged Elastic indices')
+    PARSER.add_argument('--server', dest='SERVER', action='store',
+                        default='elk-elastic',
+                        help='Index to check [*]')
+    PARSER.add_argument('--index', dest='INDEX', action='store',
+                        default='*',
+                        help='Index to check [*]')
     PARSER.add_argument('--verbose', action='store_true',
                         dest='VERBOSE', default=False,
                         help='Turn on verbose output')
     PARSER.add_argument('--debug', action='store_true',
                         dest='DEBUG', default=False,
                         help='Turn on debug output')
-    PARSER.add_argument('--index', dest='INDEX', action='store',
-                        default='*',
-                        help='Index to check [*]')
     PARSER.add_argument('--delete', action='store_true',
                         dest='DELETE', default=False,
                         help='Actually delete indices')
