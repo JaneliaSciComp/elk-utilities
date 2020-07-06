@@ -103,10 +103,9 @@ def process_indices():
     print("Indices found: %d (%s docs)" % (counter['found'], "{:,}".format(counter['dfound'])))
     print("Indices %sdeleted: %d (%s docs)" % ('' if (ARG.DELETE) else \
         'that would have been ', counter['deleted'], "{:,}".format(counter['ddeleted'])))
-    if len(policies):
-        print("Policies in use:")
-        for policy in sorted(policies):
-            print("  %s: %d" % (policy, policies[policy]))
+    print("Policies in use:")
+    for policy in sorted(policies):
+        print("  %s: %d" % (policy, policies[policy]))
 
 
 # -----------------------------------------------------------------------------
