@@ -2,6 +2,7 @@ import argparse
 from datetime import datetime, date, timedelta
 import re
 import sys
+import time
 import colorlog
 import requests
 from elasticsearch import Elasticsearch
@@ -59,7 +60,7 @@ def process_indices():
     policies = dict()
     today = date.today()
     try:
-        esearch = Elasticsearch(SERVER['elk-elastic']['address'])
+        esearch = Elasticsearch(SERVER[ARG.ES_SERVER]['address'])
     except Exception as ex:
         template = "An exception of type {0} occurred. Arguments:\n{1!r}"
         message = template.format(type(ex).__name__, ex.args)
@@ -95,6 +96,8 @@ def process_indices():
             if ARG.DELETE:
                 esearch.indices.delete(index=index, ignore=[400, 404]) #pylint: disable=unexpected-keyword-arg
                 LOGGER.error("Deleted %s (%s docs) [%s]", index, "{:,}".format(docs), use_policy)
+                wait_time = 1 if docs < 200000 else int(docs / 200000)
+                time.sleep(wait_time)
             else:
                 LOGGER.warning("Would have deleted %s (%s docs) [%s]", index, \
                     "{:,}".format(docs), use_policy)
@@ -104,7 +107,7 @@ def process_indices():
     if len(policies):
         print("Policies in use:")
         for policy in sorted(policies):
-            print("  %s: %d" % (policy, policies[policy]))
+            print("  %s (%d days): %d" % (policy, POLICY[policy]['days'], policies[policy]))
 
 
 # -----------------------------------------------------------------------------
@@ -118,6 +121,9 @@ if __name__ == '__main__':
     PARSER.add_argument('--debug', action='store_true',
                         dest='DEBUG', default=False,
                         help='Turn on debug output')
+    PARSER.add_argument('--server', dest='ES_SERVER', action='store',
+                        default='flyem-elastic',
+                        help='Index to check [*]')
     PARSER.add_argument('--index', dest='INDEX', action='store',
                         default='*',
                         help='Index to check [*]')
