@@ -66,7 +66,7 @@ def process_indices():
         message = template.format(type(ex).__name__, ex.args)
         print(message)
         sys.exit(-1)
-    print("Cluster status:", esearch.cluster.health()['status'])
+    #print("Cluster status:", esearch.cluster.health()['status'])
     for index in esearch.indices.get(ARG.INDEX):
         use_policy = ''
         if index[0] == '.':
@@ -81,6 +81,8 @@ def process_indices():
         if not maxdays:
             continue
         stats = esearch.indices.stats(index)
+        if index not in stats['indices'] or 'docs' not in stats['indices'][index]['primaries']:
+            continue
         docs = stats['indices'][index]['primaries']['docs']['count']
         counter['found'] += 1
         counter['dfound'] += docs
