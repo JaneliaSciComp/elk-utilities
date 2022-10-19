@@ -13,13 +13,20 @@ CONFIG = {'config': {'url': 'http://config.int.janelia.org/'}}
 POLICY = {}
 SERVER = {}
 COUNTER = {'found': 0, 'dfound': 0, 'deleted': 0, 'ddeleted': 0}
+NAMES = {}
 
 # -----------------------------------------------------------------------------
 
 def terminate_program(msg=None):
-    print("Indices found: %d (%s docs)" % (COUNTER['found'], "{:,}".format(COUNTER['dfound'])))
-    print("Indices %sdeleted: %d (%s docs)" % ('' if (ARG.DELETE) else \
-        'that would have been ', COUNTER['deleted'], "{:,}".format(COUNTER['ddeleted'])))
+    print(f"Indices found: {COUNTER['found']} ({COUNTER['dfound']:,} docs)")
+    if ARG.DELETE:
+        print(f"Indices deleted: {COUNTER['deleted']} ({COUNTER['ddeleted']:,} docs)")
+    else:
+        print(f"Indices that would have been deleted: {COUNTER['deleted']} "
+              + f"({COUNTER['ddeleted']:,} docs)")
+    print("Documents per index:")
+    for index in NAMES:
+        print(f"  {index:30} {NAMES[index]:>13,}")
     if msg:
         LOGGER.error(msg)
     if OUTPUT:
@@ -108,7 +115,7 @@ def process_indices():
         template = "An exception of type {0} occurred. Arguments:\n{1!r}"
         message = template.format(type(ex).__name__, ex.args)
         terminate_program(message)
-    #print("Cluster status:", esearch.cluster.health()['status'])
+    print(f"Cluster status: {esearch.cluster.health()['status']}")
     try:
         indices = esearch.indices.get(ARG.INDEX)
     except Exception as err:
@@ -134,12 +141,18 @@ def process_indices():
         idateobj = get_index_date(index)
         delta = (today - idateobj).days
         LOGGER.info("%s (%s docs): %d day(s)", index, "{:,}".format(docs), delta)
+        datestamp = index.split("-")[-1]
+        dateless = index.replace("-" + datestamp, "")
+        if dateless not in NAMES:
+            NAMES[dateless] = docs
+        else:
+            NAMES[dateless] += docs
         if delta > maxdays:
             handle_deletion(use_policy, policies, esearch, index, docs)
     if policies:
         print("Policies in use:")
         for policy in sorted(policies):
-            print("  %s (%d days): %d" % (policy, POLICY[policy]['days'], policies[policy]))
+            print(f"  {policy} ({POLICY[policy]['days']} days): {policies[policy]}")
 
 
 # -----------------------------------------------------------------------------
