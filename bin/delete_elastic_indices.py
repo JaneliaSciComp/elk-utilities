@@ -26,7 +26,7 @@ def terminate_program(msg=None):
               + f"({COUNTER['ddeleted']:,} docs)")
     print("Documents per index:")
     for index in NAMES:
-        print(f"  {index:30} {NAMES[index]:>13,}")
+        print(f"  {index:36} {NAMES[index]:>13,}")
     if msg:
         LOGGER.error(msg)
     if OUTPUT:
@@ -60,10 +60,13 @@ def initialize_program():
 
 def get_index_date(index):
     # index is expected to end with YYYY.MM.DD or YYYY.MM
-    field = index.split('-')
-    indexdate = field[-1]
+    if "aws" in index:
+        field = index.split('-', 1)
+    else:
+        field = index.split('-')
+    indexdate = field[-1].replace("-", ".")
     if len(indexdate) == 7:
-        # YY-MM : add the last day of that month
+        # YYYY-MM : add the last day of that month
         yrmo = indexdate.split('.')
         ldom = last_day_of_month(date(int(yrmo[0]), int(yrmo[1]), 1))
         indexdate += '.' + str(ldom.day)
@@ -100,8 +103,8 @@ def handle_deletion(use_policy, policies, esearch, index, docs):
         time.sleep(wait_time)
     else:
         OUTPUT.write(f"curl -XDELETE flyem-elk.int.janelia.org:9200/{index}\n")
-        LOGGER.debug("Would have deleted %s (%s docs) [%s]", index, \
-                     "{:,}".format(docs), use_policy)
+        LOGGER.warning("Would have deleted %s (%s docs) [%s]", index, \
+                       "{:,}".format(docs), use_policy)
         COUNTER['deleted'] += 1
         COUNTER['ddeleted'] += docs
 
@@ -132,23 +135,27 @@ def process_indices():
                 use_policy = policy
                 break
         if not maxdays:
-            continue
+            LOGGER.error("No policy found for %s", index)
         docs = get_index_docs(esearch, index)
         if not docs:
             continue
-        COUNTER['found'] += 1
-        COUNTER['dfound'] += docs
-        idateobj = get_index_date(index)
-        delta = (today - idateobj).days
-        LOGGER.info("%s (%s docs): %d day(s)", index, "{:,}".format(docs), delta)
-        datestamp = index.split("-")[-1]
-        dateless = index.replace("-" + datestamp, "")
+        if maxdays:
+            COUNTER['found'] += 1
+            COUNTER['dfound'] += docs
+            idateobj = get_index_date(index)
+            delta = (today - idateobj).days
+            LOGGER.info("%s (%s docs): %d day(s)", index, "{:,}".format(docs), delta)
+            if delta > maxdays:
+                handle_deletion(use_policy, policies, esearch, index, docs)
+        if index.startswith("aws_"):
+            dateless = index.split("-")[0]
+        else:
+            datestamp = index.split("-")[-1]
+            dateless = index.replace("-" + datestamp, "")
         if dateless not in NAMES:
             NAMES[dateless] = docs
         else:
             NAMES[dateless] += docs
-        if delta > maxdays:
-            handle_deletion(use_policy, policies, esearch, index, docs)
     if policies:
         print("Policies in use:")
         for policy in sorted(policies):
