@@ -34,8 +34,23 @@ def initialize_program():
     SERVER = data['config']
 
 
+def humansize(num, suffix='B'):
+    ''' Return a human-readable storage size
+        Keyword arguments:
+          num: size
+          suffix: default suffix
+        Returns:
+          string
+    '''
+    for unit in ['', 'K', 'M', 'G', 'T']:
+        if abs(num) < 1024.0:
+            return "%3.1f%s%s" % (num, unit, suffix)
+        num /= 1024.0
+    return "%.1f%s%s" % (num, 'P', suffix)
+
+
 def process_indices():
-    counter = {'found': 0, 'docs': 0}
+    counter = {'found': 0, 'docs': 0, 'size': 0}
     try:
         esearch = Elasticsearch(SERVER['elk-elastic']['address'])
     except Exception as ex:
@@ -68,9 +83,11 @@ def process_indices():
                 settings['number_of_shards'], 's' if int(settings['number_of_shards']) > 1 else ''))
         stats = esearch.indices.stats(idx)
         docs = stats['indices'][idx]['primaries']['docs']['count']
-        print("  Documents: %s" % ("{:,}".format(docs)))
+        size = stats['indices'][idx]['primaries']['store']['size_in_bytes']
+        print(f"  Documents: {docs:,} ({humansize(size)})")
         counter['docs'] += docs
-    print("Indices found: %d (%s docs)" % (counter['found'], "{:,}".format(counter['docs'])))
+        counter['size'] += size
+    print(f"Indices found: {counter['found']} ({counter['docs']:,} docs, {humansize(counter['size'])})")
 
 
 # -----------------------------------------------------------------------------
