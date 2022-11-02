@@ -12,18 +12,40 @@ from tqdm import tqdm
 CONFIG = {'config': {'url': 'http://config.int.janelia.org/'}}
 POLICY = {}
 SERVER = {}
-COUNTER = {'found': 0, 'dfound': 0, 'deleted': 0, 'ddeleted': 0}
+COUNTER = {'found': 0, 'dfound': 0, 'dsize': 0, 'deleted': 0, 'ddeleted': 0, 'size': 0}
 NAMES = {}
 
 # -----------------------------------------------------------------------------
 
+def humansize(num, suffix='B'):
+    ''' Return a human-readable storage size
+        Keyword arguments:
+          num: size
+          suffix: default suffix
+        Returns:
+          string
+    '''
+    for unit in ['', 'K', 'M', 'G', 'T']:
+        if abs(num) < 1024.0:
+            return f"{num:3.1f}{unit}{suffix}"
+        num /= 1024.0
+    return f"{num:.1f}P{suffix}"
+
+
 def terminate_program(msg=None):
-    print(f"Indices found: {COUNTER['found']} ({COUNTER['dfound']:,} docs)")
+    ''' Display stats and terminate program
+        Keyword arguments:
+          msg: optional message
+        Returns:
+          None
+    '''
+    print(f"Indices found: {COUNTER['found']} ({COUNTER['dfound']:,} docs, "
+          + f"{humansize(COUNTER['size'])})")
     if ARG.DELETE:
         print(f"Indices deleted: {COUNTER['deleted']} ({COUNTER['ddeleted']:,} docs)")
     else:
         print(f"Indices that would have been deleted: {COUNTER['deleted']} "
-              + f"({COUNTER['ddeleted']:,} docs)")
+              + f"({COUNTER['ddeleted']:,} docs, {humansize(COUNTER['dsize'])})")
     print("Documents per index:")
     for index in NAMES:
         print(f"  {index:36} {NAMES[index]:>13,}")
@@ -37,7 +59,7 @@ def terminate_program(msg=None):
 def call_responder(server, endpoint):
     url = CONFIG[server]['url'] + endpoint
     try:
-        req = requests.get(url)
+        req = requests.get(url, timeout=10)
     except requests.exceptions.RequestException as err:
         LOGGER.critical(err)
         sys.exit(-1)
@@ -48,7 +70,12 @@ def call_responder(server, endpoint):
 
 
 def initialize_program():
-    """ Initialize database """
+    ''' Initialize program
+        Keyword arguments:
+          None
+        Returns:
+          None
+    '''
     global CONFIG, SERVER, POLICY
     data = call_responder('config', 'config/rest_services')
     CONFIG = data['config']
@@ -85,11 +112,12 @@ def get_index_docs(esearch, index):
     except Exception as err:
         terminate_program(err)
     if index not in stats['indices'] or 'docs' not in stats['indices'][index]['primaries']:
-        return None
-    return stats['indices'][index]['primaries']['docs']['count']
+        return None, None
+    return stats['indices'][index]['primaries']['docs']['count'], \
+           stats['indices'][index]['primaries']['store']['size_in_bytes']
 
 
-def handle_deletion(use_policy, policies, esearch, index, docs):
+def handle_deletion(use_policy, policies, esearch, index, docs, size):
     if use_policy not in policies:
         policies[use_policy] = 0
     policies[use_policy] += 1
@@ -98,19 +126,21 @@ def handle_deletion(use_policy, policies, esearch, index, docs):
             esearch.indices.delete(index=index, ignore=[400, 404]) #pylint: disable=unexpected-keyword-arg
         except Exception as err:
             terminate_program(err)
-        LOGGER.error("Deleted %s (%s docs) [%s]", index, "{:,}".format(docs), use_policy)
+        LOGGER.error("Deleted %s (%s docs, %s) [%s]", index, "{:,}".format(docs),
+                     humansize(size), use_policy)
         wait_time = 1 if docs < 200000 else int(docs / 200000)
         time.sleep(wait_time)
     else:
         OUTPUT.write(f"curl -XDELETE flyem-elk.int.janelia.org:9200/{index}\n")
-        LOGGER.warning("Would have deleted %s (%s docs) [%s]", index, \
-                       "{:,}".format(docs), use_policy)
+        LOGGER.warning("Would have deleted %s (%s docs, %s) [%s]", index, \
+                       "{:,}".format(docs), humansize(size), use_policy)
         COUNTER['deleted'] += 1
         COUNTER['ddeleted'] += docs
+        COUNTER['dsize'] += size
 
 
 def process_indices():
-    policies = dict()
+    policies = {}
     today = date.today()
     try:
         esearch = Elasticsearch(SERVER[ARG.ES_SERVER]['address'], timeout=10)
@@ -134,19 +164,20 @@ def process_indices():
                 LOGGER.debug("%s met %s policy (%d days)", index, policy, maxdays)
                 use_policy = policy
                 break
-        if not maxdays:
+        if not maxdays and ARG.DEBUG:
             LOGGER.error("No policy found for %s", index)
-        docs = get_index_docs(esearch, index)
+        docs, size = get_index_docs(esearch, index)
         if not docs:
             continue
         if maxdays:
             COUNTER['found'] += 1
             COUNTER['dfound'] += docs
+            COUNTER['size'] += size
             idateobj = get_index_date(index)
             delta = (today - idateobj).days
             LOGGER.info("%s (%s docs): %d day(s)", index, "{:,}".format(docs), delta)
             if delta > maxdays:
-                handle_deletion(use_policy, policies, esearch, index, docs)
+                handle_deletion(use_policy, policies, esearch, index, docs, size)
         if index.startswith("aws_"):
             dateless = index.split("-")[0]
         else:
