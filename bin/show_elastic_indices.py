@@ -4,6 +4,7 @@ import sys
 from colorama import init, Fore, Back, Style
 import colorlog
 import requests
+from tqdm import tqdm
 from elasticsearch import Elasticsearch
 
 # Configuration
@@ -61,33 +62,50 @@ def process_indices():
     health = esearch.cluster.health()
     print("Cluster status:", health['status'])
     response = call_responder('elk-elastic', ARG.INDEX)
-    for idx in sorted(response):
+    index_name = dict()
+    indices = sorted(response.keys())
+    if not ARG.VERBOSE:
+        indices = tqdm(indices)
+    for idx in indices:
         counter['found'] += 1
         if 'aliases' in response[idx] and response[idx]['aliases']:
             aliases = Fore.WHITE + Style.BRIGHT + Back.RED \
                       + ", ".join(list(response[idx]['aliases'].keys())) \
                       + Style.RESET_ALL
-            print('%s (alises: %s)' % (idx, aliases))
+            LOGGER.info('%s (alises: %s)' % (idx, aliases))
         else:
-            print(idx)
+            LOGGER.info(idx)
+        base = idx.split("-")[0]
+        index_name[base] = {"earliest": None, "docs": 0, "size": 0}
         if ARG.FULL:
             for prop in response[idx]['mappings']['doc']['properties']:
                 print('  %s' % (prop))
         settings = response[idx]['settings']['index']
         created = int(settings['creation_date']) / 1000
         timestamp = datetime.fromtimestamp(created).strftime('%Y-%m-%d %H:%M:%S')
-        print("  Created: %s" % (timestamp))
+        if not index_name[base]["earliest"]:
+            index_name[base]["earliest"] = timestamp
+        if ARG.VERBOSE:
+            print("  Created: %s" % (timestamp))
         if ARG.FULL:
             print("  %s replica%s across %s shard%s" % (settings['number_of_replicas'], \
                 's' if int(settings['number_of_replicas']) > 1 else '', \
                 settings['number_of_shards'], 's' if int(settings['number_of_shards']) > 1 else ''))
         stats = esearch.indices.stats(idx)
         docs = stats['indices'][idx]['primaries']['docs']['count']
+        index_name[base]["docs"] += docs
         size = stats['indices'][idx]['primaries']['store']['size_in_bytes']
-        print(f"  Documents: {docs:,} ({humansize(size)})")
+        index_name[base]["size"] += size
+        if ARG.VERBOSE:
+            print(f"  Documents: {docs:,} ({humansize(size)})")
         counter['docs'] += docs
         counter['size'] += size
     print(f"Indices found: {counter['found']} ({counter['docs']:,} docs, {humansize(counter['size'])})")
+    for idx in index_name:
+        print(idx)
+        print(f"  Earliest:  {index_name[idx]['earliest']}")
+        print(f"  Socuments: {index_name[idx]['docs']}")
+        print(f"  Size:      {humansize(index_name[idx]['size'])}")
 
 
 # -----------------------------------------------------------------------------
