@@ -76,7 +76,8 @@ def process_indices():
         else:
             LOGGER.info(idx)
         base = idx.split("-")[0]
-        index_name[base] = {"earliest": None, "docs": 0, "size": 0}
+        if base not in index_name:
+            index_name[base] = {"earliest": None, "docs": 0, "size": 0}
         if ARG.FULL:
             for prop in response[idx]['mappings']['doc']['properties']:
                 print('  %s' % (prop))
@@ -84,6 +85,8 @@ def process_indices():
         created = int(settings['creation_date']) / 1000
         timestamp = datetime.fromtimestamp(created).strftime('%Y-%m-%d %H:%M:%S')
         if not index_name[base]["earliest"]:
+            index_name[base]["earliest"] = timestamp
+        elif timestamp < index_name[base]["earliest"]:
             index_name[base]["earliest"] = timestamp
         if ARG.VERBOSE:
             print("  Created: %s" % (timestamp))
@@ -104,7 +107,7 @@ def process_indices():
     for idx in index_name:
         print(idx)
         print(f"  Earliest:  {index_name[idx]['earliest']}")
-        print(f"  Socuments: {index_name[idx]['docs']}")
+        print(f"  Documents: {index_name[idx]['docs']}")
         print(f"  Size:      {humansize(index_name[idx]['size'])}")
 
 
