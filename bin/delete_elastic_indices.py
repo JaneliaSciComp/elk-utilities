@@ -12,7 +12,7 @@ from tqdm import tqdm
 CONFIG = {'config': {'url': 'http://config.int.janelia.org/'}}
 POLICY = {}
 SERVER = {}
-COUNTER = {'found': 0, 'dfound': 0, 'dsize': 0, 'deleted': 0, 'ddeleted': 0, 'size': 0}
+COUNTER = dict.fromkeys(['found', 'dfound', 'dsize', 'deleted', 'ddeleted', 'size'], 0)
 NAMES = {}
 
 # -----------------------------------------------------------------------------
@@ -42,7 +42,8 @@ def terminate_program(msg=None):
     print(f"Indices found: {COUNTER['found']} ({COUNTER['dfound']:,} docs, "
           + f"{humansize(COUNTER['size'])})")
     if ARG.DELETE:
-        print(f"Indices deleted: {COUNTER['deleted']} ({COUNTER['ddeleted']:,} docs)")
+        print(f"Indices deleted: {COUNTER['deleted']} ({COUNTER['ddeleted']:,} docs, " \
+              + f"{humansize(COUNTER['dsize'])})")
     else:
         print(f"Indices that would have been deleted: {COUNTER['deleted']} "
               + f"({COUNTER['ddeleted']:,} docs, {humansize(COUNTER['dsize'])})")
@@ -134,9 +135,9 @@ def handle_deletion(use_policy, policies, esearch, index, docs, size):
         OUTPUT.write(f"curl -XDELETE flyem-elk.int.janelia.org:9200/{index}\n")
         LOGGER.warning("Would have deleted %s (%s docs, %s) [%s]", index, \
                        "{:,}".format(docs), humansize(size), use_policy)
-        COUNTER['deleted'] += 1
-        COUNTER['ddeleted'] += docs
-        COUNTER['dsize'] += size
+    COUNTER['deleted'] += 1
+    COUNTER['ddeleted'] += docs
+    COUNTER['dsize'] += size
 
 
 def process_indices():
