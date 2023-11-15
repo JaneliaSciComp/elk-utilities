@@ -47,9 +47,9 @@ def terminate_program(msg=None):
     else:
         print(f"Indices that would have been deleted: {COUNTER['deleted']} "
               + f"({COUNTER['ddeleted']:,} docs, {humansize(COUNTER['dsize'])})")
-    print("Documents per index:")
+    print("Indices:")
     for index in NAMES:
-        print(f"  {index:36} {NAMES[index]:>13,}")
+        print(f"  {index:36}  {NAMES[index]['docs']:>13,}  {humansize(NAMES[index]['size']):>7}")
     if msg:
         LOGGER.error(msg)
     if OUTPUT:
@@ -185,9 +185,10 @@ def process_indices():
             datestamp = index.split("-")[-1]
             dateless = index.replace("-" + datestamp, "")
         if dateless not in NAMES:
-            NAMES[dateless] = docs
+            NAMES[dateless] = {'docs': docs, 'size': size}
         else:
-            NAMES[dateless] += docs
+            NAMES[dateless]['docs'] += docs
+            NAMES[dateless]['size'] += size
     if policies:
         print("Policies in use:")
         for policy in sorted(policies):
