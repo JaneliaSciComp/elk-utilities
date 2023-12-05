@@ -2,10 +2,10 @@ import argparse
 from datetime import datetime
 import sys
 from colorama import init, Fore, Back, Style
-import colorlog
 import requests
 from tqdm import tqdm
 from elasticsearch import Elasticsearch
+import jrc_common.jrc_common as JRC
 
 # Configuration
 CONFIG = {'config': {'url': 'http://config.int.janelia.org/'}}
@@ -15,7 +15,7 @@ SERVER = {}
 def call_responder(server, endpoint):
     url = CONFIG[server]['url'] + endpoint
     try:
-        req = requests.get(url)
+        req = requests.get(url, timeout=20)
     except requests.exceptions.RequestException as err:
         LOGGER.critical(err)
         sys.exit(-1)
@@ -45,9 +45,25 @@ def humansize(num, suffix='B'):
     '''
     for unit in ['', 'K', 'M', 'G', 'T']:
         if abs(num) < 1024.0:
-            return "%3.1f%s%s" % (num, unit, suffix)
+            return f"{num:.2f}{unit}{suffix}"
         num /= 1024.0
-    return "%.1f%s%s" % (num, 'P', suffix)
+    return f"{num:.2f}P{suffix}"
+
+
+def elapsed(secs):
+    ''' Return elapsed time as a string
+        Keyword arguments:
+          secs: elapsed seconds
+        Returns:
+          Elapsed time as a string
+    '''
+    days, hoursrem = divmod(secs, 3600 * 24)
+    hours, rem = divmod(hoursrem, 3600)
+    minutes, seconds = divmod(rem, 60)
+    etime = f"{int(hours):0>2}:{int(minutes):0>2}:{seconds:.3f}"
+    if days:
+        etime = f"{days} day{'' if days == 1 else 's'}, {etime}"
+    return etime
 
 
 def process_indices():
@@ -61,6 +77,14 @@ def process_indices():
         sys.exit(-1)
     health = esearch.cluster.health()
     print("Cluster status:", health['status'])
+    # ----
+    response = call_responder('elk-elastic', '_tasks')
+    for _, node in response['nodes'].items():
+        print(f"{node['name']}: {len(node['tasks'])} tasks")
+        for _, task in node['tasks'].items():
+        #for task in sorted(node['tasks'], key=lambda x: x['running_time_in_nanos']):
+            print(f"  {task['action']}: {elapsed(task['running_time_in_nanos']/1e9)}")
+    # ----
     response = call_responder('elk-elastic', ARG.INDEX)
     index_name = dict()
     indices = sorted(response.keys())
@@ -89,11 +113,12 @@ def process_indices():
         elif timestamp < index_name[base]["earliest"]:
             index_name[base]["earliest"] = timestamp
         if ARG.VERBOSE:
-            print("  Created: %s" % (timestamp))
+            print(f"  Created: {timestamp}")
         if ARG.FULL:
-            print("  %s replica%s across %s shard%s" % (settings['number_of_replicas'], \
-                's' if int(settings['number_of_replicas']) > 1 else '', \
-                settings['number_of_shards'], 's' if int(settings['number_of_shards']) > 1 else ''))
+            print(f"  {settings['number_of_replicas']} " \
+                  + f"replica{'s' if int(settings['number_of_replicas']) > 1 else ''}" \
+                  + f" across {settings['number_of_shards']} shard" \
+                  + f"{'s' if int(settings['number_of_shards']) > 1 else ''}")
         stats = esearch.indices.stats(idx)
         docs = stats['indices'][idx]['primaries']['docs']['count']
         index_name[base]["docs"] += docs
@@ -107,7 +132,7 @@ def process_indices():
     for idx in index_name:
         print(idx)
         print(f"  Earliest:  {index_name[idx]['earliest']}")
-        print(f"  Documents: {index_name[idx]['docs']}")
+        print(f"  Documents: {index_name[idx]['docs']:,}")
         print(f"  Size:      {humansize(index_name[idx]['size'])}")
 
 
@@ -132,19 +157,7 @@ if __name__ == '__main__':
                         dest='DEBUG', default=False,
                         help='Turn on debug output')
     ARG = PARSER.parse_args()
-
-    LOGGER = colorlog.getLogger()
-    ATTR = colorlog.colorlog.logging if "colorlog" in dir(colorlog) else colorlog
-    if ARG.DEBUG:
-        LOGGER.setLevel(ATTR.DEBUG)
-    elif ARG.VERBOSE:
-        LOGGER.setLevel(ATTR.INFO)
-    else:
-        LOGGER.setLevel(ATTR.WARNING)
-    HANDLER = colorlog.StreamHandler()
-    HANDLER.setFormatter(colorlog.ColoredFormatter())
-    LOGGER.addHandler(HANDLER)
-
+    LOGGER = JRC.setup_logging(ARG)
     if ARG.SERVER:
         SERVER['elk-elastic'] = {'address': 'http://' + ARG.SERVER + ':9200'}
         CONFIG['elk-elastic'] = {'url': SERVER['elk-elastic']['address'] + '/'}
