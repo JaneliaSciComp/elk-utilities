@@ -40,17 +40,19 @@ def call_responder(server, endpoint, payload=''):
             headers = {"Content-Type": "application/json",
                        "Accept": "application/json",
                        "host": socket.gethostname()}
-            req = requests.post(url, headers=headers, json=payload, timeout=30)
+            req = requests.post(url, headers=headers, json=payload, timeout=1)
         else:
             req = requests.get(url, timeout=10)
         if req.status_code == 200:
             return req.json()
+    except requests.exceptions.ReadTimeout:
+        return
     except requests.exceptions.RequestException as err:
         template = "An exception of type {0} occurred. Arguments:\n{1!r}"
         print(template.format(type(err).__name__, err.args))
         terminate_program(err)
     except Exception as err:
-        template = "An xxx exception of type {0} occurred. Arguments:\n{1!r}"
+        template = "An exception exception of type {0} occurred. Arguments:\n{1!r}"
         print(template.format(type(err).__name__, err.args))
         terminate_program(err)
     LOGGER.critical(url)
@@ -70,6 +72,7 @@ def process_indices():
         terminate_program(f"No indices found for {ARG.INDEX}")
     print(f"Indices for {ARG.INDEX}: {len(indices)}")
     docs = updated = to_update = 0
+    commands = []
     for idx in sorted(indices, key=lambda x: x['index']):
         LOGGER.info("%s: %s docs (%s)", idx['index'], f"{int(idx['docs.count']):,}",
                     idx['store.size'])
@@ -82,12 +85,18 @@ def process_indices():
         resp = call_responder("elk-elastic", f"{idx['index']}/_search?pretty", search_payload)
         if resp['hits']['total']:
             to_update += resp['hits']['total']
-            if ARG.WRITE:
-                resp = call_responder("elk-elastic", f"{idx['index']}/" \
-                                      + "_update_by_query?conflicts=proceed", payload)
-                updated += resp['updated']
+            commands.append([idx['index'], payload])
     print(f"Found {docs:,} documents in total")
     print(f"Found {to_update:,} documents to be updated")
+    if ARG.WRITE:
+        for cmd in commands:
+            resp = call_responder("elk-elastic", f"{cmd[0]}/" \
+                                  + "_update_by_query?conflicts=proceed", cmd[1])
+            if resp:
+                updated += resp['updated']
+            else:
+                LOGGER.warning("Cleanup of %s has returned a timeout error, but is still running",
+                               cmd[0])
     print(f"Updated {updated:,} documents")
 
 # -----------------------------------------------------------------------------
