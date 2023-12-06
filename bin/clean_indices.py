@@ -40,7 +40,7 @@ def call_responder(server, endpoint, payload=''):
             headers = {"Content-Type": "application/json",
                        "Accept": "application/json",
                        "host": socket.gethostname()}
-            req = requests.post(url, headers=headers, json=payload, timeout=1)
+            req = requests.post(url, headers=headers, json=payload, timeout=5)
         else:
             req = requests.get(url, timeout=10)
         if req.status_code == 200:
