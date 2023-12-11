@@ -80,7 +80,7 @@ def process_index(index):
                         LOGGER.info(payload)
                         if ARG.WRITE:
                             future = producer.send(WRITE_TOPIC,
-                                                   json.dumps(payload))
+                                                   json.dumps(payload).encode('utf-8'))
                             try:
                                 future.get(timeout=10)
                             except KafkaError:
