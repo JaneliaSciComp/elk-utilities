@@ -132,7 +132,7 @@ def handle_deletion(use_policy, policies, esearch, index, docs, size):
         wait_time = 1 if docs < 200000 else int(docs / 200000)
         time.sleep(wait_time)
     else:
-        OUTPUT.write(f"curl -XDELETE flyem-elk.int.janelia.org:9200/{index}\n")
+        OUTPUT.write(f"curl -XDELETE {SERVER[ARG.ES_SERVER]['address']}/{index}\n")
         LOGGER.warning("Would have deleted %s (%s docs, %s) [%s]", index, \
                        "{:,}".format(docs), humansize(size), use_policy)
     COUNTER['deleted'] += 1

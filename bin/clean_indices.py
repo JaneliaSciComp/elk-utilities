@@ -3,6 +3,7 @@
     specified indices.
 '''
 import argparse
+import json
 from operator import attrgetter
 import socket
 import sys
@@ -61,13 +62,13 @@ def call_responder(server, endpoint, payload=''):
 
 
 def process_indices():
-    """ Process indices to remoev "message" fields
+    """ Process indices to remove "message" fields
         Keyword arguments:
           None
         Returns:
           None
     """
-    indices = call_responder("elk-elastic", f"_cat/indices/{ARG.INDEX}*?format=JSON")
+    indices = call_responder(ARG.ES_SERVER, f"_cat/indices/{ARG.INDEX}*?format=JSON")
     if not indices:
         terminate_program(f"No indices found for {ARG.INDEX}")
     print(f"Indices for {ARG.INDEX}: {len(indices)}")
@@ -82,15 +83,19 @@ def process_indices():
                   }
         search_payload = {"query": {"term": {"client": "screen_review"}}}
         search_payload = {"query" : {"exists": { "field": "message" }}}
-        resp = call_responder("elk-elastic", f"{idx['index']}/_search?pretty", search_payload)
+        resp = call_responder(ARG.ES_SERVER, f"{idx['index']}/_search?pretty", search_payload)
+        LOGGER.debug(json.dumps(resp['hits'], indent=2))
         if resp['hits']['total']:
-            to_update += resp['hits']['total']
+            if isinstance(resp['hits']['total'], int):
+                to_update += resp['hits']['total']
+            else:
+                to_update += len(resp['hits'])
             commands.append([idx['index'], payload])
     print(f"Found {docs:,} documents in total")
     print(f"Found {to_update:,} documents to be updated")
     if ARG.WRITE:
         for cmd in commands:
-            resp = call_responder("elk-elastic", f"{cmd[0]}/" \
+            resp = call_responder(ARG.ES_SERVER, f"{cmd[0]}/" \
                                   + "_update_by_query?conflicts=proceed", cmd[1])
             if resp:
                 updated += resp['updated']
@@ -104,7 +109,10 @@ def process_indices():
 if __name__ == '__main__':
     PARSER = argparse.ArgumentParser(description="Elatic indices")
     PARSER.add_argument('--index', dest='INDEX', action='store',
-                        default='aws_organelle_index', help='Index basename')
+                        default='aws_', help='Index basename')
+    PARSER.add_argument('--server', dest='ES_SERVER', action='store',
+                        default='elk-elastic',
+                        help='Index to check [*]')
     PARSER.add_argument('--write', dest='WRITE', action='store_true',
                         default=False, help='Actually clean indices')
     PARSER.add_argument('--verbose', dest='VERBOSE', action='store_true',
