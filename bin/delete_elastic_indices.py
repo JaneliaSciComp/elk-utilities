@@ -48,8 +48,13 @@ def terminate_program(msg=None):
         print(f"Indices that would have been deleted: {COUNTER['deleted']} "
               + f"({COUNTER['ddeleted']:,} docs, {humansize(COUNTER['dsize'])})")
     print("Indices:")
+    total = {"docs": 0, "size": 0}
     for index in NAMES:
         print(f"  {index:36}  {NAMES[index]['docs']:>13,}  {humansize(NAMES[index]['size']):>7}")
+        total['docs'] += NAMES[index]['docs']
+        total['size'] += NAMES[index]['size']
+    print(f"  {'-'*36}  {'-'*13}  {'-'*7}")
+    print(f"  {'TOTALS':36}  {total['docs']:>13,}  {humansize(total['size']):>7}")
     if msg:
         LOGGER.error(msg)
     if OUTPUT:
