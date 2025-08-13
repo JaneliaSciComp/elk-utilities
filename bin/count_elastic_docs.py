@@ -1,54 +1,63 @@
+''' count_elastic_docs.py
+    Count the number of Elastic docs in all indices
+'''
+
 import argparse
+import os
 import sys
-import colorlog
-import requests
 from elasticsearch import Elasticsearch
+import jrc_common.jrc_common as JRC
 
-# Configuration
-CONFIG = {'config': {'url': 'http://config.int.janelia.org/'}}
-SERVER = {}
+# pylint: disable=broad-exception-caught,logging-fstring-interpolation
 
+ARG = LOGGER = None
 # -----------------------------------------------------------------------------
-def call_responder(server, endpoint):
-    url = CONFIG[server]['url'] + endpoint
-    try:
-        req = requests.get(url)
-    except requests.exceptions.RequestException as err:
-        LOGGER.critical(err)
-        sys.exit(-1)
-    if req.status_code == 200:
-        return req.json()
-    LOGGER.error('Status: %s', str(req.status_code))
-    sys.exit(-1)
 
-
-def initialize_program():
-    """ Initialize database """
-    global CONFIG, SERVER
-    data = call_responder('config', 'config/rest_services')
-    CONFIG = data['config']
-    data = call_responder('config', 'config/servers')
-    SERVER = data['config']
+def terminate_program(msg=None):
+    ''' Terminate the program gracefully
+        Keyword arguments:
+          msg: error message or object
+        Returns:
+          None
+    '''
+    if msg:
+        if not isinstance(msg, str):
+            msg = f"An exception of type {type(msg).__name__} occurred. Arguments:\n{msg.args}"
+        LOGGER.critical(msg)
+    sys.exit(-1 if msg else 0)
 
 
 def process_indices():
-    counter = {'found': 0, 'dfound': 0}
+    ''' Process indices
+        Keyword arguments:
+          None
+        Returns:
+          None
+        '''
+    found = dfound = 0
+    if "ELK_PASS" not in os.environ:
+        terminate_program("Missing password - set in ELK_PASS environment variable")
+    if ARG.SERVER:
+        url = ARG.SERVER
+    else:
+        try:
+            server = JRC.simplenamespace_to_dict(JRC.get_config("servers"))
+        except Exception as err:
+            terminate_program(err)
+        url = server['metrics-elastic']['address']
     try:
-        esearch = Elasticsearch(SERVER['elk-elastic']['address'])
-    except Exception as ex:
-        template = "An exception of type {0} occurred. Arguments:\n{1!r}"
-        message = template.format(type(ex).__name__, ex.args)
-        print(message)
-        sys.exit(-1)
+        esearch = Elasticsearch(url, basic_auth=('elastic', os.environ.get('ELK_PASS')))
+    except Exception as err:
+        terminate_program(err)
     health = esearch.cluster.health()
     print("Cluster status:", health['status'])
-    for index in esearch.indices.get('*'):
-        stats = esearch.indices.stats(index)
-        docs = stats['indices'][index]['primaries']['docs']['count']
-        counter['found'] += 1
-        counter['dfound'] += docs
-        LOGGER.info("%s (%s docs)", index, "{:,}".format(docs))
-    print("Indices found: %d (%s docs)" % (counter['found'], "{:,}".format(counter['dfound'])))
+    for idx in esearch.indices.get(index='*'):
+        stats = esearch.indices.stats(index=idx)
+        docs = stats['indices'][idx]['primaries']['docs']['count']
+        found += 1
+        dfound += docs
+        LOGGER.info(f"{idx} ({docs:,} docs)")
+    print(f"Indices found: {found:,} ({dfound:,} docs)")
 
 
 # -----------------------------------------------------------------------------
@@ -56,33 +65,15 @@ def process_indices():
 if __name__ == '__main__':
     PARSER = argparse.ArgumentParser(
         description='Count documents in Elastic indices')
+    PARSER.add_argument('--server', dest='SERVER', action='store',
+                        default='', help='ES erver to query')
     PARSER.add_argument('--verbose', action='store_true',
                         dest='VERBOSE', default=False,
                         help='Turn on verbose output')
     PARSER.add_argument('--debug', action='store_true',
                         dest='DEBUG', default=False,
                         help='Turn on debug output')
-    PARSER.add_argument('--server', dest='SERVER', action='store',
-                        default='',
-                        help='ES erver to query [flyem-elk.int.janelia.org:9200]')
     ARG = PARSER.parse_args()
-
-    LOGGER = colorlog.getLogger()
-    ATTR = colorlog.colorlog.logging if "colorlog" in dir(colorlog) else colorlog
-    if ARG.DEBUG:
-        LOGGER.setLevel(ATTR.DEBUG)
-    elif ARG.VERBOSE:
-        LOGGER.setLevel(ATTR.INFO)
-    else:
-        LOGGER.setLevel(ATTR.WARNING)
-    HANDLER = colorlog.StreamHandler()
-    HANDLER.setFormatter(colorlog.ColoredFormatter())
-    LOGGER.addHandler(HANDLER)
-
-    if ARG.SERVER:
-        SERVER['elk-elastic'] = {'address': 'http://' + ARG.SERVER + ':9200'}
-        CONFIG['elk-elastic'] = {'url': SERVER['elk-elastic']['address'] + '/'}
-    else:
-        initialize_program()
+    LOGGER = JRC.setup_logging(ARG)
     process_indices()
-    sys.exit(0)
+    terminate_program()

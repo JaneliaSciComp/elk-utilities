@@ -1,15 +1,21 @@
 import argparse
 from datetime import datetime, date, timedelta
 import re
+import os
 import sys
 import time
-import colorlog
 import requests
 from elasticsearch import Elasticsearch
 from tqdm import tqdm
+import jrc_common.jrc_common as JRC
+
+# pylint: disable=broad-exception-caught,logging-not-lazy
+
+
+# -----------------------------------------------------------------------------
 
 # Configuration
-CONFIG = {'config': {'url': 'http://config.int.janelia.org/'}}
+ARG = LOGGER = CONFIG = SERVER = None
 POLICY = {}
 SERVER = {}
 COUNTER = dict.fromkeys(['found', 'dfound', 'dsize', 'deleted', 'ddeleted', 'size'], 0)
@@ -75,22 +81,6 @@ def call_responder(server, endpoint):
     sys.exit(-1)
 
 
-def initialize_program():
-    ''' Initialize program
-        Keyword arguments:
-          None
-        Returns:
-          None
-    '''
-    global CONFIG, SERVER, POLICY
-    data = call_responder('config', 'config/rest_services')
-    CONFIG = data['config']
-    data = call_responder('config', 'config/servers')
-    SERVER = data['config']
-    data = call_responder('config', 'config/retention_policies')
-    POLICY = data['config']
-
-
 def get_index_date(index):
     # index is expected to end with YYYY.MM.DD or YYYY.MM
     if "aws" in index:
@@ -114,7 +104,7 @@ def last_day_of_month(indate):
 
 def get_index_docs(esearch, index):
     try:
-        stats = esearch.indices.stats(index)
+        stats = esearch.indices.stats(index=index)
     except Exception as err:
         terminate_program(err)
     if index not in stats['indices'] or 'docs' not in stats['indices'][index]['primaries']:
@@ -137,7 +127,7 @@ def handle_deletion(use_policy, policies, esearch, index, docs, size):
         wait_time = 1 if docs < 200000 else int(docs / 200000)
         time.sleep(wait_time)
     else:
-        OUTPUT.write(f"curl -XDELETE {SERVER[ARG.ES_SERVER]['address']}/{index}\n")
+        #OUTPUT.write(f"curl -XDELETE {SERVER[ARG.SERVER]['address']}/{index}\n")
         LOGGER.warning("Would have deleted %s (%s docs, %s) [%s]", index, \
                        "{:,}".format(docs), humansize(size), use_policy)
     COUNTER['deleted'] += 1
@@ -148,15 +138,22 @@ def handle_deletion(use_policy, policies, esearch, index, docs, size):
 def process_indices():
     policies = {}
     today = date.today()
+    if "ELK_PASS" not in os.environ:
+        terminate_program("Missing password - set in ELK_PASS environment variable")
+    if ARG.SERVER:
+        url = ARG.SERVER
+    else:
+        url = SERVER['metrics-elastic']['address']
     try:
-        esearch = Elasticsearch(SERVER[ARG.ES_SERVER]['address'], timeout=10)
-    except Exception as ex:
-        template = "An exception of type {0} occurred. Arguments:\n{1!r}"
-        message = template.format(type(ex).__name__, ex.args)
-        terminate_program(message)
-    print(f"Cluster status: {esearch.cluster.health()['status']}")
+        esearch = Elasticsearch(url, basic_auth=('elastic', os.environ.get('ELK_PASS')))
+        health = esearch.cluster.health()
+        print("Cluster status:", health['status'])
+    except Exception as err:
+        terminate_program(str(err))
+    if health['status'] not in ['green', 'yellow']:
+        terminate_program("Cluster status is not green")
     try:
-        indices = esearch.indices.get(ARG.INDEX)
+        indices = esearch.indices.get(index=ARG.INDEX)
     except Exception as err:
         terminate_program(err)
     for index in tqdm(indices):
@@ -205,36 +202,28 @@ def process_indices():
 if __name__ == '__main__':
     PARSER = argparse.ArgumentParser(
         description='Delete aged Elastic indices')
-    PARSER.add_argument('--verbose', action='store_true',
-                        dest='VERBOSE', default=False,
-                        help='Turn on verbose output')
-    PARSER.add_argument('--debug', action='store_true',
-                        dest='DEBUG', default=False,
-                        help='Turn on debug output')
-    PARSER.add_argument('--server', dest='ES_SERVER', action='store',
-                        default='flyem-elastic',
-                        help='Index to check [*]')
+    PARSER.add_argument('--server', dest='SERVER', action='store',
+                        default='', help='Index to check [*]')
     PARSER.add_argument('--index', dest='INDEX', action='store',
                         default='*',
                         help='Index to check [*]')
     PARSER.add_argument('--delete', action='store_true',
                         dest='DELETE', default=False,
                         help='Actually delete indices')
+    PARSER.add_argument('--verbose', action='store_true',
+                        dest='VERBOSE', default=False,
+                        help='Turn on verbose output')
+    PARSER.add_argument('--debug', action='store_true',
+                        dest='DEBUG', default=False,
+                        help='Turn on debug output')
     ARG = PARSER.parse_args()
-
-    LOGGER = colorlog.getLogger()
-    ATTR = colorlog.colorlog.logging if "colorlog" in dir(colorlog) else colorlog
-    if ARG.DEBUG:
-        LOGGER.setLevel(ATTR.DEBUG)
-    elif ARG.VERBOSE:
-        LOGGER.setLevel(ATTR.INFO)
-    else:
-        LOGGER.setLevel(ATTR.WARNING)
-    HANDLER = colorlog.StreamHandler()
-    HANDLER.setFormatter(colorlog.ColoredFormatter())
-    LOGGER.addHandler(HANDLER)
-
-    initialize_program()
+    LOGGER = JRC.setup_logging(ARG)
+    try:
+        CONFIG = JRC.simplenamespace_to_dict(JRC.get_config("rest_services"))
+        SERVER = JRC.simplenamespace_to_dict(JRC.get_config("servers"))
+        POLICY = JRC.simplenamespace_to_dict(JRC.get_config("retention_policies"))
+    except Exception as err:
+        terminate_program(err)
     OUTPUT = open("delete_elastic.sh", "w", encoding="ascii")
     process_indices()
     terminate_program()

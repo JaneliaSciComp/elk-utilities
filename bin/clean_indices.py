@@ -5,13 +5,15 @@
 import argparse
 import json
 from operator import attrgetter
+import os
 import socket
 import sys
 import requests
 import jrc_common.jrc_common as JRC
 
-# pylint: disable=broad-exception-caught
+# pylint: disable=broad-exception-caught,logging-not-lazy
 
+ARG = LOGGER = REST = None
 # -----------------------------------------------------------------------------
 
 def terminate_program(msg=None):
@@ -37,17 +39,18 @@ def call_responder(server, endpoint, payload=''):
     '''
     url = attrgetter(f"{server}.url")(REST) + endpoint
     try:
+        auth = ('elastic', os.environ.get('ELK_PASS'))
         if payload:
             headers = {"Content-Type": "application/json",
                        "Accept": "application/json",
                        "host": socket.gethostname()}
-            req = requests.post(url, headers=headers, json=payload, timeout=5)
+            req = requests.post(url, headers=headers, json=payload, auth=auth, timeout=5)
         else:
-            req = requests.get(url, timeout=10)
+            req = requests.get(url, auth=auth, timeout=10)
         if req.status_code == 200:
             return req.json()
     except requests.exceptions.ReadTimeout:
-        return
+        return None
     except requests.exceptions.RequestException as err:
         template = "An exception of type {0} occurred. Arguments:\n{1!r}"
         print(template.format(type(err).__name__, err.args))
@@ -68,6 +71,8 @@ def process_indices():
         Returns:
           None
     """
+    if "ELK_PASS" not in os.environ:
+        terminate_program("Missing password - set in ELK_PASS environment variable")
     indices = call_responder(ARG.ES_SERVER, f"_cat/indices/{ARG.INDEX}*?format=JSON")
     if not indices:
         terminate_program(f"No indices found for {ARG.INDEX}")
@@ -81,15 +86,18 @@ def process_indices():
         payload = {"script" : "ctx._source.remove(\"message\")",
                    "query" : {"exists": { "field": "message" }}
                   }
-        search_payload = {"query": {"term": {"client": "screen_review"}}}
         search_payload = {"query" : {"exists": { "field": "message" }}}
         resp = call_responder(ARG.ES_SERVER, f"{idx['index']}/_search?pretty", search_payload)
         LOGGER.debug(json.dumps(resp['hits'], indent=2))
         if resp['hits']['total']:
-            if isinstance(resp['hits']['total'], int):
+            if isinstance(resp['hits']['total'], int) and resp['hits']['total'] > 0:
+                LOGGER.warning(f"Found {resp['hits']['total']} " \
+                               + f"documents to be updated in {idx['index']}")
                 to_update += resp['hits']['total']
-            else:
-                to_update += len(resp['hits'])
+            elif resp['hits']['hits']:
+                LOGGER.warning(f"Found {len(resp['hits']['hits'])} " \
+                               + f"documents to be updated in {idx['index']}")
+                to_update += len(resp['hits']['hits'])
             commands.append([idx['index'], payload])
     print(f"Found {docs:,} documents in total")
     print(f"Found {to_update:,} documents to be updated")
@@ -111,7 +119,7 @@ if __name__ == '__main__':
     PARSER.add_argument('--index', dest='INDEX', action='store',
                         default='aws_', help='Index basename')
     PARSER.add_argument('--server', dest='ES_SERVER', action='store',
-                        default='elk-elastic',
+                        default='metrics-elastic',
                         help='Index to check [*]')
     PARSER.add_argument('--write', dest='WRITE', action='store_true',
                         default=False, help='Actually clean indices')
