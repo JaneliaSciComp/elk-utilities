@@ -1,5 +1,6 @@
 import argparse
 from datetime import datetime
+import os
 import sys
 from colorama import init, Fore, Back, Style
 import requests
@@ -12,10 +13,12 @@ CONFIG = {'config': {'url': 'http://config.int.janelia.org/'}}
 SERVER = {}
 
 # -----------------------------------------------------------------------------
+
 def call_responder(server, endpoint):
     url = CONFIG[server]['url'] + endpoint
+    auth = ('elastic', os.environ.get('ELK_PASS'))
     try:
-        req = requests.get(url, timeout=20)
+        req = requests.get(url, timeout=10, auth=auth)
     except requests.exceptions.RequestException as err:
         LOGGER.critical(err)
         sys.exit(-1)
@@ -26,6 +29,8 @@ def call_responder(server, endpoint):
 
 
 def initialize_program():
+    if "ELK_PASS" not in os.environ:
+        terminate_program("Missing password - set in ELK_PASS environment variable")
     init(autoreset=True)
     """ Initialize database """
     global CONFIG, SERVER
@@ -69,7 +74,9 @@ def elapsed(secs):
 def process_indices():
     counter = {'found': 0, 'docs': 0, 'size': 0}
     try:
-        esearch = Elasticsearch(SERVER['elk-elastic']['address'])
+        LOGGER.info(f"Connecting to {SERVER['metrics-elastic']['address']}")
+        esearch = Elasticsearch(SERVER['metrics-elastic']['address'],
+                                basic_auth=('elastic', os.environ.get('ELK_PASS')))
     except Exception as ex:
         template = "An exception of type {0} occurred. Arguments:\n{1!r}"
         message = template.format(type(ex).__name__, ex.args)
@@ -78,14 +85,14 @@ def process_indices():
     health = esearch.cluster.health()
     print("Cluster status:", health['status'])
     # ----
-    response = call_responder('elk-elastic', '_tasks')
+    response = call_responder('metrics-elastic', '_tasks')
     for _, node in response['nodes'].items():
         print(f"{node['name']}: {len(node['tasks'])} tasks")
         for _, task in node['tasks'].items():
         #for task in sorted(node['tasks'], key=lambda x: x['running_time_in_nanos']):
             print(f"  {task['action']}: {elapsed(task['running_time_in_nanos']/1e9)}")
     # ----
-    response = call_responder('elk-elastic', ARG.INDEX)
+    response = call_responder('metrics-elastic', ARG.INDEX)
     index_name = dict()
     indices = sorted(response.keys())
     if not ARG.VERBOSE:
@@ -146,7 +153,7 @@ if __name__ == '__main__':
                         help='Index to check [*]')
     PARSER.add_argument('--server', dest='SERVER', action='store',
                         default='',
-                        help='ES erver to query [flyem-elk.int.janelia.org:9200]')
+                        help='ES erver to query [metrics-elk.int.janelia.org:9200]')
     PARSER.add_argument('--full', action='store_true',
                         dest='FULL', default=False,
                         help='Show full report (includes fields')
@@ -159,8 +166,8 @@ if __name__ == '__main__':
     ARG = PARSER.parse_args()
     LOGGER = JRC.setup_logging(ARG)
     if ARG.SERVER:
-        SERVER['elk-elastic'] = {'address': 'http://' + ARG.SERVER + ':9200'}
-        CONFIG['elk-elastic'] = {'url': SERVER['elk-elastic']['address'] + '/'}
+        SERVER['metrics-elastic'] = {'address': 'http://' + ARG.SERVER + ':9200'}
+        CONFIG['metrics-elastic'] = {'url': SERVER['metrics-elastic']['address'] + '/'}
     else:
         initialize_program()
     process_indices()

@@ -1,9 +1,10 @@
 import argparse
+import json
 import sys
-import pprint
-import colorlog
+import os
 import requests
 from elasticsearch import Elasticsearch
+import jrc_common.jrc_common as JRC
 
 # Configuration
 CONFIG = {'config': {'url': 'http://config.int.janelia.org/'}}
@@ -34,7 +35,8 @@ def initialize_program():
 
 def process_index(index):
     try:
-        esearch = Elasticsearch(SERVER['elk-elastic']['address'])
+        esearch = Elasticsearch(SERVER['metrics-elastic']['address'],
+                                basic_auth=('elastic', os.environ.get('ELK_PASS')))
     except Exception as ex:
         template = "An exception of type {0} occurred. Arguments:\n{1!r}"
         message = template.format(type(ex).__name__, ex.args)
@@ -43,17 +45,16 @@ def process_index(index):
     # Show health
     health = esearch.cluster.health()
     print("Cluster status:", health['status'])
-    if index not in esearch.indices.get('*'):
+    if index not in esearch.indices.get(index='*'):
         index += '*'
     # Show transactions in last minute
     result = esearch.search(index=index, body={"query": {"range": \
         {"@timestamp": {"gte": "now-1m"}}}})
-    print("Transactions in the last minute: %d"  % (result['hits']['total']))
+    print("Transactions in the last minute: %d"  % (result['hits']['total']['value']))
     # Show last record in index
     result = esearch.search(index=index, body={"size": 1, "sort": {"@timestamp": "desc"}})
     print("Index: " + result['hits']['hits'][0]['_index'])
-    ppp = pprint.PrettyPrinter(indent=4)
-    ppp.pprint(result['hits']['hits'][0]['_source'])
+    print(json.dumps(result['hits']['hits'][0]['_source'], indent=4, default=str))
 
 
 # -----------------------------------------------------------------------------
@@ -65,7 +66,7 @@ if __name__ == '__main__':
                         default='emdata*_dvid_activity-*', help='Index to fetch latest record from')
     PARSER.add_argument('--server', dest='SERVER', action='store',
                         default='',
-                        help='ES erver to query [flyem-elk.int.janelia.org:9200]')
+                        help='ES erver to query [metrics-elk.int.janelia.org:9200]')
     PARSER.add_argument('--verbose', action='store_true',
                         dest='VERBOSE', default=False,
                         help='Turn on verbose output')
@@ -73,22 +74,11 @@ if __name__ == '__main__':
                         dest='DEBUG', default=False,
                         help='Turn on debug output')
     ARG = PARSER.parse_args()
-
-    LOGGER = colorlog.getLogger()
-    ATTR = colorlog.colorlog.logging if "colorlog" in dir(colorlog) else colorlog
-    if ARG.DEBUG:
-        LOGGER.setLevel(ATTR.DEBUG)
-    elif ARG.VERBOSE:
-        LOGGER.setLevel(ATTR.INFO)
-    else:
-        LOGGER.setLevel(ATTR.WARNING)
-    HANDLER = colorlog.StreamHandler()
-    HANDLER.setFormatter(colorlog.ColoredFormatter())
-    LOGGER.addHandler(HANDLER)
+    LOGGER = JRC.setup_logging(ARG)
 
     if ARG.SERVER:
-        SERVER['elk-elastic'] = {'address': 'http://' + ARG.SERVER + ':9200'}
-        CONFIG['elk-elastic'] = {'url': SERVER['elk-elastic']['address'] + '/'}
+        SERVER['metrics-elastic'] = {'address': 'http://' + ARG.SERVER + ':9200'}
+        CONFIG['metrics-elastic'] = {'url': SERVER['metrics-elastic']['address'] + '/'}
     else:
         initialize_program()
     process_index(ARG.INDEX)
